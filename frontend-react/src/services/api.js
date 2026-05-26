@@ -50,3 +50,10 @@ export function scoreToPercent(score) {
   if (score == null || Number.isNaN(score)) return 0;
   return Math.min(100, Math.round(score * 100));
 }
+
+export function getMatchConfidenceStyle(percent) {
+  if (percent >= 90) return "text-emerald-400 bg-emerald-500/10";
+  if (percent >= 70) return "text-primary bg-primary/10";
+  if (percent >= 50) return "text-amber-400 bg-amber-500/10";
+  return "text-content-muted bg-white/5";
+}

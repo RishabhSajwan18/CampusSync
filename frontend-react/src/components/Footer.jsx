@@ -1,57 +1,40 @@
 export default function Footer() {
   return (
-    <footer id="about" className="border-t border-white/[0.06] bg-navy-900/50">
-      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="grid gap-12 md:grid-cols-3">
+    <footer id="about" className="mt-auto border-t border-white/[0.06]">
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+        <div className="grid gap-6 text-sm sm:grid-cols-3">
           <div>
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue to-accent-violet text-sm font-bold text-white">
-                CS
-              </span>
-              <span className="text-lg font-bold text-white">CampusSync</span>
-            </div>
-            <p className="mt-4 max-w-xs text-sm leading-relaxed text-slate-500">
-              AI-powered campus lost & found. Upload items, get instant visual
-              similarity matches, and help reunite belongings with their owners.
+            <p className="font-medium text-content">CampusSync</p>
+            <p className="mt-1 text-xs leading-relaxed text-content-muted">
+              Campus lost &amp; found with AI image matching for students.
             </p>
           </div>
-
           <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-              About
-            </h3>
-            <ul className="mt-4 space-y-3 text-sm text-slate-500">
+            <p className="text-xs font-medium text-content-muted">About</p>
+            <ul className="mt-2 space-y-1 text-xs text-content-faint">
               <li>Web Development PBL Project</li>
               <li>Made by TEAM RSP²</li>
-              <li>CLIP-based image embeddings</li>
-              <li>PostgreSQL + pgvector similarity search</li>
+              <li>CLIP embeddings · pgvector</li>
             </ul>
           </div>
-
           <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-              Contact
-            </h3>
-            <ul className="mt-4 space-y-3 text-sm text-slate-500">
+            <p className="text-xs font-medium text-content-muted">Contact</p>
+            <ul className="mt-2 space-y-1 text-xs text-content-faint">
               <li>
-                <a href="mailto:rishabhsajwan18@gmail.com" className="transition-colors hover:text-white">
+                <a
+                  href="mailto:rishabhsajwan18@gmail.com"
+                  className="transition-colors hover:text-content"
+                >
                   rishabhsajwan18@gmail.com
                 </a>
               </li>
               <li>Graphic Era Hill University</li>
-              <li>Main building, CR 101</li>
             </ul>
           </div>
         </div>
-
-        <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/[0.06] pt-8 sm:flex-row">
-          <p className="text-xs text-slate-600">
-            © {new Date().getFullYear()} CampusSync. All rights reserved.
-          </p>
-          <p className="text-xs text-slate-600">
-            Project: AI Campus Lost & Found System · FastAPI + React
-          </p>
-        </div>
+        <p className="mt-6 text-[11px] text-content-faint">
+          © {new Date().getFullYear()} CampusSync
+        </p>
       </div>
     </footer>
   );

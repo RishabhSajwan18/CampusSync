@@ -9,7 +9,8 @@ import Footer from "../components/Footer";
 
 export default function Home() {
   const [matches, setMatches] = useState([]);
-  const [uploadMessage, setUploadMessage] = useState(null);
+  const [uploadedItem, setUploadedItem] = useState(null);
+  const [uploadPreview, setUploadPreview] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const uploadRef = useRef(null);
@@ -23,95 +24,81 @@ export default function Home() {
     uploadRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  const handleUploadSuccess = (data) => {
+  const handleUploadSuccess = (data, previewUrl) => {
     setHasSearched(true);
     setMatches(data.possible_matches || []);
-    setUploadMessage(data.message || "Item uploaded successfully");
+    setUploadedItem(data.item || null);
+    setUploadPreview(previewUrl || data.item?.image_url || null);
     setRefreshKey((k) => k + 1);
     setTimeout(() => {
       matchesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
   };
 
-  const bestMatch = matches[0];
-  const otherMatches = matches.slice(1);
+  const uploadedImage = uploadPreview || uploadedItem?.image_url;
 
   return (
-    <div className="min-h-screen">
+    <div className="flex min-h-screen flex-col">
       <Navbar onReportClick={scrollToUpload} />
 
-      <main>
-        <Hero
-          onReportLost={scrollToUpload}
-          onBrowse={() => scrollTo("browse")}
-        />
-
-        <StatsSection refreshKey={refreshKey} />
+      <main className="flex-1">
+        <Hero onReport={scrollToUpload} onBrowse={() => scrollTo("browse")} />
 
         <div ref={uploadRef}>
           <UploadSection onUploadSuccess={handleUploadSuccess} />
         </div>
 
-        <section ref={matchesRef} className="relative py-8 sm:py-12">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-10 text-center">
-              <h2 className="section-heading">AI Match Results</h2>
-              <p className="section-sub mx-auto">
-                {uploadMessage
-                  ? uploadMessage
-                  : "Upload an item above to see AI-powered similarity matches."}
-              </p>
-            </div>
+        <section ref={matchesRef} className="border-t border-white/[0.06] py-8 sm:py-10">
+          <div className="mx-auto max-w-5xl px-4 sm:px-6">
+            {hasSearched && (
+              <h2 className="section-title mb-5">
+                {matches.length > 0
+                  ? `Matches Found (${matches.length})`
+                  : "Matches Found (0)"}
+              </h2>
+            )}
 
             {!hasSearched ? (
-              <div className="glass mx-auto max-w-lg rounded-2xl py-14 text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10">
-                  <svg className="h-8 w-8 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                </div>
-                <p className="text-lg font-medium text-slate-400">Awaiting upload</p>
-                <p className="mt-2 text-sm text-slate-600">
-                  Report an item to search for visually similar opposite-type listings.
-                </p>
-              </div>
+              <p className="text-sm text-content-muted">
+                Submit a report above to see AI similarity matches.
+              </p>
             ) : matches.length === 0 ? (
-              <div className="glass mx-auto max-w-lg rounded-2xl py-14 text-center">
-                <p className="text-lg font-medium text-slate-400">No matches found</p>
-                <p className="mt-2 text-sm text-slate-600">
-                  No visually similar opposite-type items met the AI threshold yet.
-                </p>
-              </div>
+              <p className="text-sm text-content-muted">No matches found.</p>
             ) : (
-              <div className="space-y-12">
-                {bestMatch && (
-                  <div>
-                    <h3 className="mb-6 text-center text-sm font-semibold uppercase tracking-wider text-accent-cyan">
-                      Top Match
-                    </h3>
-                    <div className="mx-auto max-w-md">
-                      <MatchCard match={bestMatch} featured />
-                    </div>
+              <div className="grid gap-6 lg:grid-cols-[200px_1fr] lg:gap-8">
+                <div className="lg:sticky lg:top-16 lg:self-start">
+                  <p className="mb-2 text-xs font-medium text-content-muted">Your upload</p>
+                  <div className="card overflow-hidden">
+                    {uploadedImage ? (
+                      <img
+                        src={uploadedImage}
+                        alt={uploadedItem?.title || "Uploaded item"}
+                        className="aspect-square w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex aspect-square items-center justify-center text-xs text-content-faint">
+                        No preview
+                      </div>
+                    )}
+                    {uploadedItem?.title && (
+                      <p className="truncate px-3 py-2 text-xs text-content-muted">
+                        {uploadedItem.title}
+                      </p>
+                    )}
                   </div>
-                )}
+                </div>
 
-                {otherMatches.length > 0 && (
-                  <div>
-                    <h3 className="mb-6 text-sm font-semibold uppercase tracking-wider text-slate-500">
-                      Other Matches ({otherMatches.length})
-                    </h3>
-                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                      {otherMatches.map((match) => (
-                        <MatchCard key={match.id} match={match} />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  {matches.map((match, index) => (
+                    <MatchCard key={match.id} match={match} featured={index === 0} />
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </section>
 
+        <StatsSection refreshKey={refreshKey} />
         <BrowseSection refreshKey={refreshKey} />
       </main>
 

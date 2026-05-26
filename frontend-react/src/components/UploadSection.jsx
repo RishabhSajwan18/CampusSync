@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createItem } from "../services/api";
 
 const INITIAL_FORM = {
@@ -8,31 +8,59 @@ const INITIAL_FORM = {
   type: "lost",
 };
 
+const LOADING_PHASES = [
+  "Uploading...",
+  "Analyzing...",
+  "Searching matches...",
+  "Ranking results...",
+];
+
 export default function UploadSection({ onUploadSuccess }) {
   const [form, setForm] = useState(INITIAL_FORM);
   const [imageFile, setImageFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState(0);
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const fileInputRef = useRef(null);
+  const phaseTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingPhase(0);
+      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
+      return;
+    }
+
+    phaseTimerRef.current = setInterval(() => {
+      setLoadingPhase((p) => (p < LOADING_PHASES.length - 1 ? p + 1 : p));
+    }, 900);
+
+    return () => {
+      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
+    };
+  }, [loading]);
 
   const updateField = (name, value) => {
     setForm((prev) => ({ ...prev, [name]: value }));
     setFieldErrors((prev) => ({ ...prev, [name]: null }));
   };
 
-  const setFile = useCallback((file) => {
-    if (!file || !file.type.startsWith("image/")) {
-      setFieldErrors((prev) => ({ ...prev, image: "Please select a valid image file" }));
-      return;
-    }
-    if (preview) URL.revokeObjectURL(preview);
-    setImageFile(file);
-    setPreview(URL.createObjectURL(file));
-    setFieldErrors((prev) => ({ ...prev, image: null }));
-  }, [preview]);
+  const setFile = useCallback(
+    (file) => {
+      if (!file || !file.type.startsWith("image/")) {
+        setFieldErrors((prev) => ({ ...prev, image: "Please select a valid image file" }));
+        return;
+      }
+      if (preview) URL.revokeObjectURL(preview);
+      setImageFile(file);
+      setPreview(URL.createObjectURL(file));
+      setFieldErrors((prev) => ({ ...prev, image: null }));
+    },
+    [preview]
+  );
 
   const handleDrop = (e) => {
     e.preventDefault();
@@ -54,6 +82,7 @@ export default function UploadSection({ onUploadSuccess }) {
     if (!validate()) return;
 
     setLoading(true);
+    setLoadingPhase(0);
     setError(null);
 
     const formData = new FormData();
@@ -65,10 +94,11 @@ export default function UploadSection({ onUploadSuccess }) {
 
     try {
       const data = await createItem(formData);
-      onUploadSuccess?.(data);
+      const imageForResults = data.item?.image_url || preview;
+      onUploadSuccess?.(data, imageForResults);
       setForm(INITIAL_FORM);
       setImageFile(null);
-      if (preview) URL.revokeObjectURL(preview);
+      if (preview && data.item?.image_url) URL.revokeObjectURL(preview);
       setPreview(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
@@ -86,36 +116,27 @@ export default function UploadSection({ onUploadSuccess }) {
   };
 
   return (
-    <section id="lost-found" className="relative py-16 sm:py-24">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-accent-blue/[0.03] to-transparent" />
-
-      <div className="relative mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-        <div className="mb-10 text-center">
-          <h2 className="section-heading">Report an Item</h2>
-          <p className="section-sub mx-auto">
-            Upload a photo and details. Our AI will search for visually similar
-            opposite-type reports on campus.
+    <section id="lost-found" className="py-8 sm:py-10">
+      <div className="mx-auto max-w-report px-4 sm:px-6">
+        <div className="mb-5">
+          <h2 className="section-title">Report Lost / Found</h2>
+          <p className="section-desc">
+            Add details and a photo. We&apos;ll match against opposite-type reports.
           </p>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="glass-strong overflow-hidden rounded-3xl shadow-glass"
-        >
-          <div className="border-b border-white/10 bg-gradient-to-r from-accent-blue/10 via-transparent to-accent-violet/10 px-6 py-4 sm:px-8">
-            <p className="text-sm font-medium text-slate-300">Item type</p>
-            <div className="mt-3 flex rounded-xl bg-navy-900/80 p-1 ring-1 ring-white/10">
+        <form onSubmit={handleSubmit} className="card p-5 sm:p-6">
+          <div className="mb-5">
+            <span className="mb-2 block text-xs font-medium text-content-muted">Type</span>
+            <div className="segmented max-w-xs">
               {["lost", "found"].map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => updateField("type", t)}
-                  className={`flex-1 rounded-lg py-2.5 text-sm font-semibold capitalize transition-all ${
-                    form.type === t
-                      ? t === "lost"
-                        ? "bg-rose-500/20 text-rose-300 shadow-sm ring-1 ring-rose-500/30"
-                        : "bg-emerald-500/20 text-emerald-300 shadow-sm ring-1 ring-emerald-500/30"
-                      : "text-slate-500 hover:text-slate-300"
+                  disabled={loading}
+                  className={`segmented-btn ${
+                    form.type === t ? "segmented-btn-active" : "segmented-btn-inactive"
                   }`}
                 >
                   {t}
@@ -124,9 +145,9 @@ export default function UploadSection({ onUploadSuccess }) {
             </div>
           </div>
 
-          <div className="space-y-5 p-6 sm:p-8">
+          <div className="space-y-4">
             <div>
-              <label htmlFor="title" className="mb-1.5 block text-sm font-medium text-slate-300">
+              <label htmlFor="title" className="mb-1 block text-xs font-medium text-content-muted">
                 Title <span className="text-rose-400">*</span>
               </label>
               <input
@@ -134,8 +155,8 @@ export default function UploadSection({ onUploadSuccess }) {
                 type="text"
                 value={form.title}
                 onChange={(e) => updateField("title", e.target.value)}
-                placeholder="e.g. Black backpack with laptop"
-                className={`input-field ${fieldErrors.title ? "border-rose-500/50 ring-rose-500/20" : ""}`}
+                placeholder="Black backpack with laptop"
+                className={`input-field ${fieldErrors.title ? "border-rose-500/40" : ""}`}
                 disabled={loading}
               />
               {fieldErrors.title && (
@@ -144,22 +165,22 @@ export default function UploadSection({ onUploadSuccess }) {
             </div>
 
             <div>
-              <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-slate-300">
+              <label htmlFor="description" className="mb-1 block text-xs font-medium text-content-muted">
                 Description
               </label>
               <textarea
                 id="description"
-                rows={3}
+                rows={2}
                 value={form.description}
                 onChange={(e) => updateField("description", e.target.value)}
-                placeholder="Distinctive features, brand, color..."
+                placeholder="Brand, color, distinctive marks..."
                 className="input-field resize-none"
                 disabled={loading}
               />
             </div>
 
             <div>
-              <label htmlFor="location" className="mb-1.5 block text-sm font-medium text-slate-300">
+              <label htmlFor="location" className="mb-1 block text-xs font-medium text-content-muted">
                 Location
               </label>
               <input
@@ -167,14 +188,14 @@ export default function UploadSection({ onUploadSuccess }) {
                 type="text"
                 value={form.location}
                 onChange={(e) => updateField("location", e.target.value)}
-                placeholder="e.g. Library 2nd floor"
+                placeholder="Library, 2nd floor"
                 className="input-field"
                 disabled={loading}
               />
             </div>
 
             <div>
-              <span className="mb-1.5 block text-sm font-medium text-slate-300">
+              <span className="mb-1 block text-xs font-medium text-content-muted">
                 Image <span className="text-rose-400">*</span>
               </span>
               <div
@@ -188,12 +209,12 @@ export default function UploadSection({ onUploadSuccess }) {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
                 onClick={() => !loading && fileInputRef.current?.click()}
-                className={`relative cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-all ${
+                className={`cursor-pointer rounded-md border border-dashed px-4 py-6 text-center transition-colors duration-200 ${
                   dragOver
-                    ? "border-accent-cyan bg-accent-cyan/5"
+                    ? "border-primary/50 bg-primary/5"
                     : fieldErrors.image
                       ? "border-rose-500/40 bg-rose-500/5"
-                      : "border-white/15 bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.04]"
+                      : "border-white/[0.1] hover:border-white/[0.18] hover:bg-white/[0.02]"
                 }`}
               >
                 <input
@@ -206,11 +227,11 @@ export default function UploadSection({ onUploadSuccess }) {
                 />
 
                 {preview ? (
-                  <div className="relative mx-auto max-w-xs">
+                  <div className="relative inline-block">
                     <img
                       src={preview}
                       alt="Preview"
-                      className="mx-auto max-h-48 rounded-xl object-contain shadow-lg ring-1 ring-white/10"
+                      className="max-h-36 rounded-md object-contain"
                     />
                     <button
                       type="button"
@@ -218,7 +239,7 @@ export default function UploadSection({ onUploadSuccess }) {
                         e.stopPropagation();
                         clearImage();
                       }}
-                      className="absolute -right-2 -top-2 flex h-8 w-8 items-center justify-center rounded-full bg-navy-800 text-slate-400 ring-1 ring-white/20 hover:text-white"
+                      className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-surface-elevated text-xs text-content-muted hover:text-content"
                       disabled={loading}
                     >
                       ×
@@ -226,13 +247,8 @@ export default function UploadSection({ onUploadSuccess }) {
                   </div>
                 ) : (
                   <>
-                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-blue/20 to-accent-violet/20 ring-1 ring-white/10">
-                      <svg className="h-7 w-7 text-accent-cyan" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p className="font-medium text-white">Drag & drop your image here</p>
-                    <p className="mt-1 text-sm text-slate-500">or click to browse · PNG, JPG, WEBP</p>
+                    <p className="text-sm text-content">Drop image here or click to browse</p>
+                    <p className="mt-1 text-xs text-content-faint">PNG, JPG, WEBP</p>
                   </>
                 )}
               </div>
@@ -242,7 +258,7 @@ export default function UploadSection({ onUploadSuccess }) {
             </div>
 
             {error && (
-              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+              <div className="rounded-md border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
                 {error}
               </div>
             )}
@@ -250,20 +266,15 @@ export default function UploadSection({ onUploadSuccess }) {
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
-                <>
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  Searching AI matches...
-                </>
+                <span className="flex items-center gap-2">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  {LOADING_PHASES[loadingPhase]}
+                </span>
               ) : (
-                <>
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  Upload & Find Matches
-                </>
+                "Submit"
               )}
             </button>
           </div>
