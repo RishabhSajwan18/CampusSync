@@ -1,34 +1,50 @@
 from datetime import datetime
 from typing import Literal
 import os
-
-from fastapi.middleware.cors import CORSMiddleware
+from io import BytesIO
+from pathlib import Path
 
 import cloudinary
 import cloudinary.uploader
+
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
+
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from models import Item, Embedding
 from ml.embedding import get_embedding
-from io import BytesIO
-
 from db import SessionLocal
-from sqlalchemy import text
 
-from pathlib import Path
+
+# =========================
+# APP
+# =========================
 
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # for development
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load env
+
+# =========================
+# ENV
+# =========================
+
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
@@ -36,8 +52,9 @@ print("ENV TEST:", os.getenv("CLOUDINARY_CLOUD_NAME"))
 
 
 # =========================
-# RESPONSE MODELS
+# RESPONSE MODEL
 # =========================
+
 class ItemResponse(BaseModel):
     id: int
     title: str
@@ -47,42 +64,40 @@ class ItemResponse(BaseModel):
     image_url: str | None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
-
-
-class CreateItemResponse(BaseModel):
-    message: str
-    item: ItemResponse
+    model_config = {
+        "from_attributes": True
+    }
 
 
 # =========================
 # ROOT
 # =========================
+
 @app.get("/")
 def root():
-    return {"message": "Backend running"}
+    return {
+        "message": "Backend running"
+    }
 
 
 # =========================
-# CREATE ITEM + AUTO MATCH
+# CREATE ITEM
 # =========================
+
 @app.post("/items")
 async def create_item(
     title: str = Form(...),
     description: str | None = Form(None),
     type: Literal["lost", "found"] = Form(...),
     location: str | None = Form(None),
-    image: UploadFile = File(...),
+    image: UploadFile = File(...)
 ):
-    print("🔥 CREATE ITEM HIT")
 
     db = SessionLocal()
+
     try:
-        # check cloudinary credentials
-        if not os.getenv("CLOUDINARY_CLOUD_NAME") or not os.getenv("CLOUDINARY_API_KEY") or not os.getenv(
-            "CLOUDINARY_API_SECRET"
-        ):
-            raise HTTPException(status_code=500, detail="Cloudinary credentials missing")
+
+        print("🔥 CREATE ITEM")
 
         cloudinary.config(
             cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
@@ -91,191 +106,279 @@ async def create_item(
             secure=True,
         )
 
-        # read image
+        # -------------------
+        # READ IMAGE
+        # -------------------
+
         image_bytes = await image.read()
-        print("✅ IMAGE RECEIVED")
 
-        # upload
-        upload_result = cloudinary.uploader.upload(image_bytes, folder="items")
-        secure_url = upload_result.get("secure_url")
+        upload = cloudinary.uploader.upload(
+            image_bytes,
+            folder="items"
+        )
 
-        if not secure_url:
-            raise HTTPException(status_code=400, detail="Image upload failed")
+        image_url = upload["secure_url"]
 
-        # create item
+        # -------------------
+        # SAVE ITEM
+        # -------------------
+
         db_item = Item(
             title=title,
             description=description,
             type=type,
             location=location,
-            image_url=secure_url,
+            image_url=image_url,
         )
 
         db.add(db_item)
         db.flush()
 
-        print("✅ ITEM SAVED IN DB")
+        # -------------------
+        # EMBEDDING
+        # -------------------
 
-        # embedding
-        embedding = get_embedding(BytesIO(image_bytes))
-        print("✅ EMBEDDING GENERATED")
+        embedding = get_embedding(
+            BytesIO(image_bytes)
+        )
 
         db_embedding = Embedding(
             item_id=db_item.id,
             vector=embedding.tolist()
         )
+
         db.add(db_embedding)
 
         db.commit()
         db.refresh(db_item)
 
-        print("🚀 STARTING MATCHING")
+        print("✅ ITEM SAVED")
 
-        # =========================
-        # AUTO MATCHING
-        # =========================
-        opposite_type = "found" if type == "lost" else "lost"
+        # -------------------
+        # MATCHING
+        # -------------------
+
+        opposite_type = (
+            "found"
+            if type == "lost"
+            else "lost"
+        )
 
         results = db.execute(
             text("""
-            SELECT items.*, embeddings.vector <-> CAST(:query_vector AS vector) AS distance
-            FROM embeddings
-            JOIN items ON items.id = embeddings.item_id
-            WHERE items.type = :opposite_type
-            ORDER BY embeddings.vector <-> CAST(:query_vector AS vector)
-            LIMIT 5;
+                SELECT
+                    items.*,
+                    embeddings.vector
+                    <->
+                    CAST(:query_vector AS vector)
+                    AS distance
+
+                FROM embeddings
+
+                JOIN items
+                ON items.id = embeddings.item_id
+
+                WHERE items.type = :opposite_type
+
+                ORDER BY distance
+
+                LIMIT 10
             """),
             {
-                "query_vector": str(embedding.tolist()),
-                "opposite_type": opposite_type
-            }
+                "query_vector": str(
+                    embedding.tolist()
+                ),
+
+                "opposite_type":
+                opposite_type,
+            },
         ).fetchall()
-
-        print("RAW RESULTS:", results)
-
-        # 🔥 APPLY PROPER FILTERING
-        THRESHOLD = 5.0
 
         matches = []
 
+        print("RAW RESULTS")
+
         for row in results:
-            distance = float(row.distance)
-            print("DISTANCE:", distance)
 
-            if distance <= THRESHOLD:
-                score = 1 / (1 + distance)
+            distance = float(
+                row.distance
+            )
 
-                matches.append({
-                    "id": row.id,
-                    "title": row.title,
-                    "type": row.type,
-                    "location": row.location,
-                    "image_url": row.image_url,
-                    "distance": distance,
-                    "score": round(score, 3)
-                })
+            print(
+                "DIST:",
+                row.title,
+                distance
+            )
 
-        print("FILTERED MATCHES:", matches)
+            # ===================
+            # SCORE
+            # ===================
 
-        matches = sorted(matches, key=lambda x: x["score"], reverse=True)
+            score = max(
+                0,
+                (1 - distance) * 100
+            )
+
+            # TITLE BONUS
+
+            if (
+                title
+                and row.title
+                and title.lower().strip()
+                ==
+                row.title.lower().strip()
+            ):
+                score += 8
+
+            # DESCRIPTION BONUS
+
+            if (
+                description
+                and row.description
+            ):
+
+                d1 = (
+                    description
+                    .lower()
+                    .strip()
+                )
+
+                d2 = (
+                    row.description
+                    .lower()
+                    .strip()
+                )
+
+                if (
+                    d1 in d2
+                    or
+                    d2 in d1
+                ):
+                    score += 5
+
+            score = min(
+                score,
+                100
+            )
+
+            # FILTER
+
+            if score < 55:
+                continue
+
+            matches.append({
+
+                "id":
+                row.id,
+
+                "title":
+                row.title,
+
+                "description":
+                row.description,
+
+                "type":
+                row.type,
+
+                "location":
+                row.location,
+
+                "image_url":
+                row.image_url,
+
+                "distance":
+                round(
+                    distance,
+                    3
+                ),
+
+                "score":
+                round(
+                    score,
+                    1
+                )
+            })
+
+        matches.sort(
+            key=lambda x:
+            x["score"],
+            reverse=True
+        )
+
+        print(
+            "FINAL MATCHES:",
+            matches
+        )
 
         return {
-            "message": "Item created successfully",
-            "item": db_item,
-            "possible_matches": matches,
-            "total_matches": len(matches)
+
+            "message":
+            "Item created successfully",
+
+            "item":
+            db_item,
+
+            "possible_matches":
+            matches,
+
+            "total_matches":
+            len(matches)
         }
 
-    except Exception as exc:
-        print("❌ ERROR:", str(exc))
+    except Exception as e:
+
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc))
+
+        print("ERROR:", str(e))
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
     finally:
+
         db.close()
+
 
 # =========================
 # GET ITEMS
 # =========================
-@app.get("/items", response_model=list[ItemResponse])
+
+@app.get("/items")
 def get_items():
+
     db = SessionLocal()
+
     try:
-        return db.query(Item).all()
+
+        return (
+            db
+            .query(Item)
+            .all()
+        )
+
     finally:
+
         db.close()
 
 
 # =========================
 # TEST EMBEDDING
 # =========================
+
 @app.post("/test-embedding")
-async def test_embedding(image: UploadFile = File(...)):
-    emb = get_embedding(BytesIO(await image.read()))
-    return {"length": len(emb)}
-
-
-# =========================
-# SEARCH API
-# =========================
-@app.post("/search")
-async def search_similar(
-    image: UploadFile = File(...),
-    type: Literal["lost", "found"] = Form(...)
+async def test_embedding(
+    image: UploadFile = File(...)
 ):
-    db = SessionLocal()
-    try:
-        print("🔍 SEARCH HIT")
 
-        image_bytes = await image.read()
+    emb = get_embedding(
+        BytesIO(
+            await image.read()
+        )
+    )
 
-        query_embedding = get_embedding(BytesIO(image_bytes)).tolist()
-
-        opposite_type = "found" if type == "lost" else "lost"
-
-        THRESHOLD = 1.2
-
-        results = db.execute(
-            text("""
-            SELECT items.*, embeddings.vector <-> CAST(:query_vector AS vector) AS distance
-            FROM embeddings
-            JOIN items ON items.id = embeddings.item_id
-            WHERE items.type = :opposite_type
-            ORDER BY embeddings.vector <-> CAST(:query_vector AS vector)
-            LIMIT 10;
-            """),
-            {
-                "query_vector": str(query_embedding),
-                "opposite_type": opposite_type
-            }
-        ).fetchall()
-
-        output = []
-
-        for row in results:
-            distance = float(row.distance)
-            print("SEARCH DISTANCE:", distance)
-
-            if distance <= THRESHOLD:
-                score = 1 / (1 + distance)
-
-                output.append({
-                    "id": row.id,
-                    "title": row.title,
-                    "description": row.description,
-                    "type": row.type,
-                    "location": row.location,
-                    "image_url": row.image_url,
-                    "distance": distance,
-                    "score": round(score, 3)
-                })
-
-        output = sorted(output, key=lambda x: x["score"], reverse=True)
-
-        return {
-            "matches": output,
-            "total_matches": len(output)
-        }
-
-    finally:
-        db.close()
+    return {
+        "length":
+        len(emb)
+    }
