@@ -1,0 +1,21 @@
+# Environment
+.env
+.env.*
+*.env
+backend/.env
+frontend-react/.env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Node
+node_modules/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
