@@ -1,36 +1,65 @@
-export default function Navbar({ onReportClick }) {
-  const links = [
-    { href: "#home", label: "Home" },
-    { href: "#lost-found", label: "Report Item", onClick: onReportClick },
-    { href: "#browse", label: "Browse" },
-  ];
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+
+export default function Navbar() {
+  const { isAuthenticated, logout, loading } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-surface/95 backdrop-blur-sm">
       <nav className="mx-auto flex h-12 max-w-5xl items-center justify-between px-4 sm:px-6">
-        <a href="#home" className="text-sm font-semibold text-content">
+        <Link to="/" className="text-sm font-semibold text-content">
           CampusSync
-        </a>
+        </Link>
 
         <div className="hidden items-center gap-6 sm:flex">
-          {links.map((link) =>
-            link.onClick ? (
+          <Link to="/" className="text-sm text-content-muted transition-colors duration-200 hover:text-content">
+            Home
+          </Link>
+          <Link
+            to="/browse"
+            className="text-sm text-content-muted transition-colors duration-200 hover:text-content"
+          >
+            Browse
+          </Link>
+
+          {!loading && isAuthenticated ? (
+            <>
+              <Link
+                to="/report"
+                className="text-sm text-content-muted transition-colors duration-200 hover:text-content"
+              >
+                Report Item
+              </Link>
               <button
-                key={link.label}
                 type="button"
-                onClick={link.onClick}
+                onClick={handleLogout}
                 className="text-sm text-content-muted transition-colors duration-200 hover:text-content"
               >
-                {link.label}
+                Logout
               </button>
-            ) : (
-              <a
-                key={link.href}
-                href={link.href}
-                className="text-sm text-content-muted transition-colors duration-200 hover:text-content"
-              >
-                {link.label}
-              </a>
+            </>
+          ) : (
+            !loading && (
+              <>
+                <Link
+                  to="/login"
+                  className="text-sm text-content-muted transition-colors duration-200 hover:text-content"
+                >
+                  Login
+                </Link>
+                <Link
+                  to="/signup"
+                  className="text-sm text-content-muted transition-colors duration-200 hover:text-content"
+                >
+                  Signup
+                </Link>
+              </>
             )
           )}
         </div>

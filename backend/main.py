@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from fastapi import (
     FastAPI,
+    Depends,
     File,
     Form,
     HTTPException,
@@ -18,10 +19,31 @@ from fastapi import (
 )
 
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+
+from pydantic import (
+    BaseModel,
+    EmailStr
+)
+
 from sqlalchemy import text
 
-from models import Item, Embedding
+from auth_utils import (
+    hash_password,
+    verify_password,
+    create_access_token
+)
+
+from deps import (
+    get_db,
+    get_current_user
+)
+
+from models import (
+    Item,
+    Embedding,
+    User
+)
+
 from ml.embedding import get_embedding
 from db import SessionLocal
 
@@ -52,7 +74,7 @@ print("ENV TEST:", os.getenv("CLOUDINARY_CLOUD_NAME"))
 
 
 # =========================
-# RESPONSE MODEL
+# MODELS
 # =========================
 
 class ItemResponse(BaseModel):
@@ -67,6 +89,121 @@ class ItemResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+
+class SignupRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# =========================
+# AUTH ROUTES
+# =========================
+
+@app.post("/signup")
+def signup(
+    data: SignupRequest,
+    db=Depends(get_db)
+):
+    existing = (
+        db.query(User)
+        .filter(
+            User.email == data.email
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            400,
+            "Email already registered"
+        )
+
+    user = User(
+        name=data.name,
+        email=data.email,
+        password_hash=hash_password(
+            data.password
+        )
+    )
+
+    db.add(user)
+
+    db.commit()
+
+    db.refresh(user)
+
+    token = create_access_token(
+        user.id
+    )
+
+    return {
+        "access_token": token,
+        "user": user
+    }
+
+
+@app.post("/login")
+def login(
+    data: LoginRequest,
+    db=Depends(get_db)
+):
+
+    user = (
+        db.query(User)
+        .filter(
+            User.email == data.email
+        )
+        .first()
+    )
+
+    if (
+        not user
+        or
+        not verify_password(
+            data.password,
+            user.password_hash
+        )
+    ):
+        raise HTTPException(
+            401,
+            "Invalid credentials"
+        )
+
+    token = create_access_token(
+        user.id
+    )
+
+    return {
+        "access_token": token,
+        "user": user
+    }
+
+
+@app.get("/me")
+def me(
+    current_user: User = Depends(
+        get_current_user
+    )
+):
+    return current_user
 
 
 # =========================
@@ -90,7 +227,8 @@ async def create_item(
     description: str | None = Form(None),
     type: Literal["lost", "found"] = Form(...),
     location: str | None = Form(None),
-    image: UploadFile = File(...)
+    image: UploadFile = File(...),
+    
 ):
 
     db = SessionLocal()
@@ -124,12 +262,13 @@ async def create_item(
         # -------------------
 
         db_item = Item(
-            title=title,
-            description=description,
-            type=type,
-            location=location,
-            image_url=image_url,
-        )
+    title=title,
+    description=description,
+    type=type,
+    location=location,
+    image_url=image_url,
+    
+)
 
         db.add(db_item)
         db.flush()
